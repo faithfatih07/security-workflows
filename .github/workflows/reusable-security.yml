@@ -25,7 +25,7 @@ jobs:
           scanners: vuln,misconfig,secret
           format: sarif
           output: trivy-results.sarif
-          exit-code: "0"
+          exit-code: "1"
           ignore-unfixed: true
 
       - name: Upload Trivy SARIF to GitHub Code Scanning (public repositories)
@@ -169,9 +169,9 @@ jobs:
           category: "/language:${{ matrix.action }}"
 
   codeql-private-mac:
-    name: CodeQL CLI analysis (licensed private repositories)
+    name: CodeQL CLI analysis (local Mac runner)
     needs: detect-codeql-languages
-    if: github.event.repository.private == true && vars.CODEQL_PRIVATE_LICENSED == 'true' && needs.detect-codeql-languages.outputs.matrix != '[]'
+    if: github.event.repository.private == true && needs.detect-codeql-languages.outputs.matrix != '[]'
     runs-on: [self-hosted, macOS, X64, codeql]
     strategy:
       fail-fast: false
@@ -233,12 +233,34 @@ jobs:
             --download
           echo "CODEQL_SARIF=$SARIF_FILE" >> "$GITHUB_ENV"
 
-      - name: Upload private CodeQL results to GitHub Code Scanning
-        if: always() && env.CODEQL_SARIF != ''
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: ${{ env.CODEQL_SARIF }}
-          category: "/language:${{ matrix.pack }}"
+      - name: Print findings and enforce gate
+        if: env.CODEQL_SARIF != ''
+        run: |
+          python3 - <<'EOF'
+          import json, os, sys
+
+          with open(os.environ["CODEQL_SARIF"], "r", encoding="utf-8") as f:
+              data = json.load(f)
+
+          findings = []
+          for run in data.get("runs", []):
+              for res in run.get("results", []):
+                  rule = res.get("ruleId", "unknown")
+                  level = res.get("level", "warning")
+                  msg = res.get("message", {}).get("text", "").strip()
+                  loc = res.get("locations", [{}])[0].get("physicalLocation", {})
+                  uri = loc.get("artifactLocation", {}).get("uri", "unknown")
+                  line = loc.get("region", {}).get("startLine", "?")
+                  findings.append(f"[{level.upper()}] {rule} @ {uri}:{line} -> {msg}")
+
+          if findings:
+              print(f"CodeQL found {len(findings)} issue(s):")
+              for item in findings:
+                  print(item)
+              sys.exit(1)
+
+          print("CodeQL passed with 0 findings.")
+          EOF
 
       - name: Remove temporary CodeQL database
         if: always()
