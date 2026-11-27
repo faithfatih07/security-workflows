@@ -60,7 +60,7 @@ jobs:
         run: python -m pip install --upgrade pip semgrep
 
       - name: Scan with Semgrep
-        run: semgrep scan --config p/security-audit --metrics=off --sarif --output semgrep.sarif .
+        run: semgrep scan --config p/security-audit --error --metrics=off --sarif --output semgrep.sarif .
 
       - name: Upload Semgrep SARIF to GitHub Code Scanning (public repositories)
         if: always() && github.event.repository.private == false && hashFiles('semgrep.sarif') != ''
