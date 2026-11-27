@@ -1,21 +1,34 @@
 # Shared GitHub Security Workflow
 
-Reusable GitHub Actions workflow that runs three security tools against the repository that calls it:
+Reusable GitHub Actions workflow and language-agnostic project starter template.
+
+## What's in this repository?
+
+- `main` contains the reusable security engine at `.github/workflows/reusable-security.yml`.
+- `project-template` contains a clean starter repository: a generic `.gitignore`, a README, and a short workflow that calls the shared engine.
+
+The reusable engine runs:
 
 - **Trivy** — filesystem vulnerability, misconfiguration and secret checks.
-- **Semgrep** — static code analysis using the `p/security-audit` ruleset.
-- **CodeQL** — automatically detects supported languages in the calling repository and runs `security-extended` analysis.
+- **Semgrep** — static security analysis using `p/security-audit`.
+- **CodeQL** — detects supported languages in the calling repository and runs `security-extended` analysis. It is skipped when no supported source language is detected.
 
-## Add it to a repository
+## Use the project template
 
-Create `.github/workflows/security.yml` in the repository that should be scanned:
+After the repository's default branch is set to `project-template` and the **Template repository** option is enabled, use **Use this template → Create a new repository**.
+
+The template branch is intentionally separate from `main`: generated projects get only the starter files, while the shared security engine stays on `main`.
+
+## Connect an existing repository
+
+Create `.github/workflows/security.yml` in the repository to be scanned:
 
 ```yaml
 name: Security Scans
 
 on:
   pull_request:
-    branches: [main]
+    branches: ["**"]
   push:
     branches: [main]
   schedule:
@@ -24,26 +37,22 @@ on:
 
 permissions:
   contents: read
-  security-events: write
   actions: read
   pull-requests: read
+  security-events: write
 
 jobs:
   security:
-    uses: faithfatih07/security-workflows/.github/workflows/security.yml@main
-    with:
-      python-version: "3.12"
+    uses: faithfatih07/security-workflows/.github/workflows/reusable-security.yml@main
 ```
-
-The optional `python-version` input only selects the Python runtime used to install and run Semgrep; it does **not** limit the languages scanned in your project. You can omit the `with:` block and use the default.
 
 ## Important notes
 
-- This workflow scans the **calling repository**; it does not scan this shared repository.
-- The caller's workflow controls when scans run. The example runs on pull requests to `main`, pushes to `main`, weekly, and manually.
-- Findings are uploaded to GitHub Code Scanning when the repository and plan support it.
-- The workflow reports findings but does not currently block merges based on findings. Treat green job status as "the scanners ran successfully", not as proof that the repository is vulnerability-free.
-- CodeQL automatic language detection may take longer in repositories containing multiple supported languages; analysis can fail if one detected language cannot be analyzed.
-- CodeQL supports a defined set of languages, including C/C++, C#, Go, Java/Kotlin, JavaScript/TypeScript, Python, Ruby, Rust, Swift, and GitHub Actions workflows. Unsupported languages are not analyzed by CodeQL.
-- Trivy dependency vulnerability coverage is best when the repository includes supported dependency manifests or lockfiles.
-- Keep this repository public if public repositories need to call it without cross-repository access configuration.
+- The workflow scans the **calling repository**, not this shared repository.
+- Pull requests to any target branch trigger scans; pushes to `main`, the weekly schedule, and manual dispatch also trigger scans.
+- Findings are uploaded to GitHub Code Scanning when supported by the repository and plan.
+- A successful run means the scanners executed. It does not prove the repository is vulnerability-free.
+- The workflow reports findings but does not currently enforce a merge block.
+- CodeQL covers supported languages (C/C++, C#, Go, Java/Kotlin, JavaScript/TypeScript, Python, Ruby, Rust, Swift). It is skipped if none are detected.
+- Trivy dependency vulnerability coverage is strongest when the repository includes supported dependency manifests or lockfiles.
+- Keep this repository public so public repositories can call the shared workflow without extra cross-repository access configuration.
