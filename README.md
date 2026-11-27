@@ -26,10 +26,10 @@ The `.pre-commit-config.yaml` file configures Gitleaks to detect API keys, token
 On your Mac, open Terminal in the project folder and run this **once for this project**:
 
 ```bash
-brew install pre-commit && pre-commit install
+brew install pre-commit gitleaks && pre-commit install
 ```
 
-After that, Gitleaks checks staged changes whenever you commit. If Homebrew or pre-commit is already installed, the command simply reuses it. This local hook is an extra safety net; the GitHub security workflow still scans pull requests.
+After that, Gitleaks checks staged changes whenever you commit. If Homebrew, pre-commit, or Gitleaks is already installed, Homebrew reuses the installed tools. This local hook is an extra safety net; the GitHub security workflow still scans pull requests.
 
 ## Protect the main branch
 
