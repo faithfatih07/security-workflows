@@ -37,10 +37,10 @@ Template files are copied into new repositories, but GitHub repository settings 
 
 After creating a repository from this template, open **Settings → Rulesets → New branch ruleset** and target `main`. Enable:
 - Require a pull request before merging.
-- Require status checks to pass before merging; select the Trivy, Semgrep, and CodeQL checks after the first workflow run.
+- Require status checks to pass before merging; after the first workflow run, select `security / Security gate`.
 
 Do not require an approval from another person if you are the only contributor; requiring the PR itself and successful checks is enough.
 
 ## Important
 
-A successful scan means the tools ran; it does not prove the project is vulnerability-free. Findings are reported; the branch ruleset is what prevents merging until the required checks pass.
+A successful scan means the tools ran; it does not prove the project is vulnerability-free. The `Security gate` checks that each applicable scanner completed; it does not itself block merges just because a scanner reported a finding.
