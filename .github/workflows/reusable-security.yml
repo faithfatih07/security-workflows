@@ -28,12 +28,21 @@ jobs:
           exit-code: "0"
           ignore-unfixed: true
 
-      - name: Upload Trivy results
-        if: always() && hashFiles('trivy-results.sarif') != ''
+      - name: Upload Trivy SARIF to GitHub Code Scanning (public repositories)
+        if: always() && github.event.repository.private == false && hashFiles('trivy-results.sarif') != ''
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-results.sarif
           category: trivy
+
+      - name: Save Trivy SARIF as an artifact (private repositories)
+        if: always() && github.event.repository.private == true && hashFiles('trivy-results.sarif') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-sarif
+          path: trivy-results.sarif
+          if-no-files-found: error
+          retention-days: 14
 
   semgrep:
     name: Semgrep code scan
@@ -53,12 +62,21 @@ jobs:
       - name: Scan with Semgrep
         run: semgrep scan --config p/security-audit --metrics=off --sarif --output semgrep.sarif .
 
-      - name: Upload Semgrep results
-        if: always() && hashFiles('semgrep.sarif') != ''
+      - name: Upload Semgrep SARIF to GitHub Code Scanning (public repositories)
+        if: always() && github.event.repository.private == false && hashFiles('semgrep.sarif') != ''
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: semgrep.sarif
           category: semgrep
+
+      - name: Save Semgrep SARIF as an artifact (private repositories)
+        if: always() && github.event.repository.private == true && hashFiles('semgrep.sarif') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-sarif
+          path: semgrep.sarif
+          if-no-files-found: error
+          retention-days: 14
 
   detect-codeql-languages:
     name: Detect CodeQL-supported languages
@@ -76,44 +94,55 @@ jobs:
               repo: context.repo.repo
             });
 
-            const map = {
-              "C": "c-cpp",
-              "C++": "c-cpp",
-              "Objective-C": "c-cpp",
-              "Objective-C++": "c-cpp",
-              "C#": "csharp",
-              "Go": "go",
-              "Java": "java-kotlin",
-              "Kotlin": "java-kotlin",
-              "JavaScript": "javascript-typescript",
-              "TypeScript": "javascript-typescript",
-              "Python": "python",
-              "Ruby": "ruby",
-              "Rust": "rust",
-              "Swift": "swift"
+            const definitions = {
+              "C": { action: "c-cpp", cli: "cpp", pack: "cpp", build: "autobuild" },
+              "C++": { action: "c-cpp", cli: "cpp", pack: "cpp", build: "autobuild" },
+              "Objective-C": { action: "c-cpp", cli: "cpp", pack: "cpp", build: "autobuild" },
+              "Objective-C++": { action: "c-cpp", cli: "cpp", pack: "cpp", build: "autobuild" },
+              "C#": { action: "csharp", cli: "csharp", pack: "csharp", build: "autobuild" },
+              "Go": { action: "go", cli: "go", pack: "go", build: "autobuild" },
+              "Java": { action: "java-kotlin", cli: "java", pack: "java", build: "autobuild" },
+              "Kotlin": { action: "java-kotlin", cli: "java", pack: "java", build: "autobuild" },
+              "JavaScript": { action: "javascript-typescript", cli: "javascript", pack: "javascript", build: "none" },
+              "TypeScript": { action: "javascript-typescript", cli: "javascript", pack: "javascript", build: "none" },
+              "Python": { action: "python", cli: "python", pack: "python", build: "none" },
+              "Ruby": { action: "ruby", cli: "ruby", pack: "ruby", build: "none" },
+              "Rust": { action: "rust", cli: "rust", pack: "rust", build: "manual" },
+              "Swift": { action: "swift", cli: "swift", pack: "swift", build: "autobuild" }
             };
 
-            const languages = [...new Set(
-              Object.keys(response.data).map(name => map[name]).filter(Boolean)
-            )];
+            const found = new Map();
+            for (const name of Object.keys(response.data)) {
+              const definition = definitions[name];
+              if (definition) found.set(definition.action, definition);
+            }
 
-            const matrix = languages.map(language => ({
-              language,
-              "build-mode": ["javascript-typescript", "python", "ruby"].includes(language)
-                ? "none"
-                : "autobuild"
-            }));
+            try {
+              await github.rest.repos.getContent({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                path: ".github/workflows"
+              });
+              found.set("actions", {
+                action: "actions",
+                cli: "actions",
+                pack: "actions",
+                build: "none"
+              });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
 
+            const matrix = [...found.values()];
             core.info(matrix.length
-              ? `CodeQL will analyze: ${languages.join(", ")}`
-              : "No CodeQL-supported source language detected; CodeQL will be skipped.");
-
+              ? `Detected CodeQL languages: ${matrix.map(x => x.action).join(", ")}`
+              : "No CodeQL-supported language detected; CodeQL will be skipped.");
             core.setOutput("matrix", JSON.stringify(matrix));
 
-  codeql:
-    name: CodeQL analysis
+  codeql-public:
+    name: CodeQL analysis (public repositories)
     needs: detect-codeql-languages
-    if: needs.detect-codeql-languages.outputs.matrix != '[]'
+    if: github.event.repository.private == false && needs.detect-codeql-languages.outputs.matrix != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -126,17 +155,103 @@ jobs:
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
-          languages: ${{ matrix.language }}
-          build-mode: ${{ matrix.build-mode }}
+          languages: ${{ matrix.action }}
+          build-mode: ${{ matrix.build }}
           queries: security-extended
+
+      - name: Build Rust source for CodeQL
+        if: matrix.build == 'manual' && matrix.cli == 'rust'
+        run: cargo build --workspace --all-targets
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v4
         with:
-          category: "/language:${{ matrix.language }}"
+          category: "/language:${{ matrix.action }}"
+
+  codeql-private-mac:
+    name: CodeQL CLI analysis (licensed private repositories)
+    needs: detect-codeql-languages
+    if: github.event.repository.private == true && vars.CODEQL_PRIVATE_LICENSED == 'true' && needs.detect-codeql-languages.outputs.matrix != '[]'
+    runs-on: [self-hosted, macOS, X64, codeql]
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.detect-codeql-languages.outputs.matrix) }}
+    steps:
+      - name: Checkout calling repository
+        uses: actions/checkout@v4
+
+      - name: Verify local CodeQL CLI
+        run: |
+          if ! command -v codeql >/dev/null 2>&1; then
+            echo "::error::CodeQL CLI was not found in the self-hosted runner PATH."
+            echo "Expected runner PATH to include /Users/trade/Developer/Tools/CodeQL/codeql."
+            exit 1
+          fi
+          codeql version
+
+      - name: Create CodeQL database (automatic build)
+        if: matrix.build != 'manual'
+        env:
+          CODEQL_LANGUAGE: ${{ matrix.cli }}
+          CODEQL_DB: ${{ runner.temp }}/codeql-db-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.cli }}
+        run: |
+          codeql database create "$CODEQL_DB" \
+            --language="$CODEQL_LANGUAGE" \
+            --source-root="$GITHUB_WORKSPACE" \
+            --build-mode="${{ matrix.build }}" \
+            --threads=4 \
+            --overwrite
+          echo "CODEQL_DB=$CODEQL_DB" >> "$GITHUB_ENV"
+
+      - name: Create CodeQL database (Rust manual build)
+        if: matrix.build == 'manual' && matrix.cli == 'rust'
+        env:
+          CODEQL_LANGUAGE: ${{ matrix.cli }}
+          CODEQL_DB: ${{ runner.temp }}/codeql-db-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.cli }}
+        run: |
+          codeql database create "$CODEQL_DB" \
+            --language="$CODEQL_LANGUAGE" \
+            --source-root="$GITHUB_WORKSPACE" \
+            --command="cargo build --workspace --all-targets" \
+            --threads=4 \
+            --overwrite
+          echo "CODEQL_DB=$CODEQL_DB" >> "$GITHUB_ENV"
+
+      - name: Analyze with security-extended queries
+        env:
+          QUERY_PACK: ${{ matrix.pack }}
+          CODEQL_DB: ${{ runner.temp }}/codeql-db-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.cli }}
+          SARIF_FILE: ${{ runner.temp }}/codeql-results-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.cli }}.sarif
+        run: |
+          codeql database analyze "$CODEQL_DB" \
+            "codeql/$QUERY_PACK-queries:codeql-suites/$QUERY_PACK-security-extended.qls" \
+            --format=sarif-latest \
+            --sarif-category="/language:$QUERY_PACK" \
+            --output="$SARIF_FILE" \
+            --threads=4 \
+            --download
+          echo "CODEQL_SARIF=$SARIF_FILE" >> "$GITHUB_ENV"
+
+      - name: Upload private CodeQL results to GitHub Code Scanning
+        if: always() && env.CODEQL_SARIF != ''
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: ${{ env.CODEQL_SARIF }}
+          category: "/language:${{ matrix.pack }}"
+
+      - name: Remove temporary CodeQL database
+        if: always()
+        env:
+          CODEQL_DB: ${{ runner.temp }}/codeql-db-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.cli }}
+          SARIF_FILE: ${{ runner.temp }}/codeql-results-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.cli }}.sarif
+        run: |
+          rm -rf "$CODEQL_DB"
+          rm -f "$SARIF_FILE"
+
   security-gate:
     name: Security gate
-    needs: [trivy, semgrep, detect-codeql-languages, codeql]
+    needs: [trivy, semgrep, detect-codeql-languages, codeql-public, codeql-private-mac]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -145,14 +260,17 @@ jobs:
           TRIVY_RESULT: ${{ needs.trivy.result }}
           SEMGREP_RESULT: ${{ needs.semgrep.result }}
           LANGUAGE_DETECTION_RESULT: ${{ needs.detect-codeql-languages.result }}
-          CODEQL_RESULT: ${{ needs.codeql.result }}
+          CODEQL_PUBLIC_RESULT: ${{ needs.codeql-public.result }}
+          CODEQL_PRIVATE_RESULT: ${{ needs.codeql-private-mac.result }}
         run: |
           echo "Trivy: ${TRIVY_RESULT}"
           echo "Semgrep: ${SEMGREP_RESULT}"
-          echo "CodeQL language detection: ${LANGUAGE_DETECTION_RESULT}"
-          echo "CodeQL: ${CODEQL_RESULT}"
+          echo "Language detection: ${LANGUAGE_DETECTION_RESULT}"
+          echo "CodeQL public: ${CODEQL_PUBLIC_RESULT}"
+          echo "CodeQL private: ${CODEQL_PRIVATE_RESULT}"
 
           test "${TRIVY_RESULT}" = "success"
           test "${SEMGREP_RESULT}" = "success"
           test "${LANGUAGE_DETECTION_RESULT}" = "success"
-          test "${CODEQL_RESULT}" = "success" || test "${CODEQL_RESULT}" = "skipped"
+          test "${CODEQL_PUBLIC_RESULT}" = "success" || test "${CODEQL_PUBLIC_RESULT}" = "skipped"
+          test "${CODEQL_PRIVATE_RESULT}" = "success" || test "${CODEQL_PRIVATE_RESULT}" = "skipped"
