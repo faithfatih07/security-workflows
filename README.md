@@ -12,7 +12,7 @@ A minimal, language-agnostic GitHub starter template for web apps, APIs, Python,
 
 The shared workflow runs when:
 - A pull request is opened or updated for any target branch.
-- Changes are pushed to `main`.
+- Changes are pushed to any branch.
 - You manually start the workflow from the Actions tab.
 
 Weekly scheduled scans are disabled to avoid running on inactive repositories.
