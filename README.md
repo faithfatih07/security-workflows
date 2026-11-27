@@ -36,10 +36,11 @@ After that, Gitleaks checks staged changes whenever you commit. If Homebrew or p
 Template files are copied into new repositories, but GitHub repository settings such as branch rulesets are **not** copied.
 
 After creating a repository from this template, open **Settings → Rulesets → New branch ruleset** and target `main`. Enable:
-- Require a pull request before merging.
-- Require status checks to pass before merging; after the first workflow run, select `security / Security gate`.
+- **Require a pull request before merging** (leave required approvals at 0 if you are the only contributor).
+- **Require status checks to pass before merging**; after the first workflow run, select `security / Security gate`.
+- **Require code scanning results**, if available; add CodeQL, Trivy, and Semgrep, and start with a **High or higher** security-alert threshold.
 
-Do not require an approval from another person if you are the only contributor; requiring the PR itself and successful checks is enough.
+This last rule blocks merging when selected scanners report alerts at or above the chosen threshold. The Security gate alone only confirms the scanners completed; it does not fail just because a finding was reported.
 
 ## Important
 
