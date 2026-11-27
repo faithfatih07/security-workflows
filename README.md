@@ -1,31 +1,46 @@
-# Project Starter Template
+# Universal Project Starter
 
-A lightweight, language-agnostic GitHub starter repository.
+A minimal, language-agnostic GitHub starter template for web apps, APIs, Python, Unity, scripts, and other projects.
 
 ## Included
 
-- A generic `.gitignore` for common operating systems and development tools.
-- A GitHub Actions workflow that calls the shared security scanners maintained in [faithfatih07/security-workflows](https://github.com/faithfatih07/security-workflows).
+- A generic `.gitignore`.
+- A shared GitHub Actions security workflow.
+- A local Gitleaks pre-commit hook configuration.
 
-## Security checks
+## Automatic GitHub security checks
 
-When you create a repository from this template, GitHub Actions automatically runs on:
-- Pull requests targeting any branch.
-- Pushes to `main`.
-- A weekly schedule.
-- Manual workflow dispatch.
+The shared security workflow runs automatically when:
+- A pull request targets a branch.
+- Changes are pushed to `main`.
+- You manually start the workflow from the Actions tab.
 
-The shared workflow runs:
-- **Trivy** for filesystem vulnerabilities, misconfigurations, and exposed secrets.
-- **Semgrep** for static security analysis.
-- **CodeQL** for supported languages detected in the repository. CodeQL is skipped when the repository has no supported source language.
+It runs **Trivy + Semgrep + CodeQL**. Weekly scheduled scans are intentionally disabled in this starter to avoid consuming Actions minutes on inactive private repositories.
 
-## Use this template
+The shared engine is maintained in [faithfatih07/security-workflows](https://github.com/faithfatih07/security-workflows), on the `security-engine` branch. Updating that central workflow updates future runs in all repositories that call it.
 
-On GitHub, click **Use this template → Create a new repository**.
+## Catch secrets before committing (local Mac setup)
 
-No language-specific starter code is included. Use this for web apps, Python, Unity, scripts, APIs, and other projects.
+The `.pre-commit-config.yaml` file configures Gitleaks to detect API keys, tokens, and passwords before a Git commit is created.
+
+On your Mac, open Terminal in the project folder and run this **once for this project**:
+
+```bash
+brew install pre-commit && pre-commit install
+```
+
+After that, Gitleaks checks staged changes whenever you commit. If Homebrew or pre-commit is already installed, the command simply reuses it. This local hook is an extra safety net; the GitHub security workflow still scans pull requests.
+
+## Protect the main branch
+
+Template files are copied into new repositories, but GitHub repository settings such as branch rulesets are **not** copied.
+
+After creating a repository from this template, open **Settings → Rulesets → New branch ruleset** and target `main`. Enable:
+- Require a pull request before merging.
+- Require status checks to pass before merging; select the Trivy, Semgrep, and CodeQL checks after the first workflow run.
+
+Do not require an approval from another person if you are the only contributor; requiring the PR itself and successful checks is enough.
 
 ## Important
 
-A successful scan means the tools ran; it does not prove the project is vulnerability-free. Findings are reported, but this workflow does not currently enforce a merge block.
+A successful scan means the tools ran; it does not prove the project is vulnerability-free. Findings are reported; the branch ruleset is what prevents merging until the required checks pass.
