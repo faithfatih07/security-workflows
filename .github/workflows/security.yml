@@ -1,0 +1,20 @@
+name: Security Scans
+
+on:
+  pull_request:
+    branches: ["**"]
+  push:
+    branches: ["**"]
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+  security-events: write
+
+jobs:
+  security:
+    uses: faithfatih07/security-workflows/.github/workflows/reusable-security.yml@main
