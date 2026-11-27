@@ -134,3 +134,25 @@ jobs:
         uses: github/codeql-action/analyze@v4
         with:
           category: "/language:${{ matrix.language }}"
+  security-gate:
+    name: Security gate
+    needs: [trivy, semgrep, detect-codeql-languages, codeql]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all applicable scanners completed
+        env:
+          TRIVY_RESULT: ${{ needs.trivy.result }}
+          SEMGREP_RESULT: ${{ needs.semgrep.result }}
+          LANGUAGE_DETECTION_RESULT: ${{ needs.detect-codeql-languages.result }}
+          CODEQL_RESULT: ${{ needs.codeql.result }}
+        run: |
+          echo "Trivy: ${TRIVY_RESULT}"
+          echo "Semgrep: ${SEMGREP_RESULT}"
+          echo "CodeQL language detection: ${LANGUAGE_DETECTION_RESULT}"
+          echo "CodeQL: ${CODEQL_RESULT}"
+
+          test "${TRIVY_RESULT}" = "success"
+          test "${SEMGREP_RESULT}" = "success"
+          test "${LANGUAGE_DETECTION_RESULT}" = "success"
+          test "${CODEQL_RESULT}" = "success" || test "${CODEQL_RESULT}" = "skipped"
